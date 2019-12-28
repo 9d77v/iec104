@@ -1,0 +1,7 @@
+FROM 9d77v/go:1.13.1
+
+COPY . /app
+
+RUN cd /app/example \
+    && go mod download  \
+    && rm -rf /app

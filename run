@@ -1,0 +1,38 @@
+#!/bin/sh
+app="iec104"
+base_version="0.0.1"
+prod_version="0.0.1"
+
+RunInDocker(){
+    workPath="//home/9d77v/$1"
+    docker run -it --rm --name $1 \
+        -v  /$PWD:$workPath -w $workPath --privileged \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        --env-file .env \
+        9d77v/iec104:base-v$base_version fish
+    return
+}
+
+case $1 in 
+    base)
+        docker build -t 9d77v/iec104:base-v$base_version -f Dockerfile.base .
+        if [ "$2" == "push" ];then
+            docker push 9d77v/iec104:base-v$base_version
+        fi
+        ;;
+    build)
+        docker build -t 9d77v/iec104:v$prod_version .
+        ;;
+    d|docker)
+        RunInDocker $app 
+        ;;
+    client)
+        go run example/client/main.go
+        ;;
+    it)
+        docker exec -it $app fish
+        ;;
+    *)
+        echo "do nothing"
+        ;;
+esac
