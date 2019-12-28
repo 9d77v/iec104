@@ -11,7 +11,7 @@ iec104主站golang实现
 
 ./run d 进入docker容器
 
-./run dev 运行example中的程序
+./run client 运行example中的104主站程序
 
 修改example/client/worker/worker.go来处理通过104协议收到的数据
 

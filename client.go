@@ -4,7 +4,9 @@ import (
 	"context"
 	"net"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -73,13 +75,17 @@ func (c *Client) Start(f func(c *Client)) {
 	go c.read()
 	go c.write()
 	go c.handler(c)
-	//定时器，每15分钟发送一次总召唤，每20分钟发送一次对时报文
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Kill, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	//定时器，每15分钟发送一次总召唤
 	ticker := time.NewTicker(totalCallInterval)
 	for {
 		select {
 		case <-ticker.C:
 			c.Logger.Info("每隔15分钟发送一次总召唤")
 			c.sendTotalCall()
+		case <-signals:
+			c.Close()
 		}
 	}
 }
