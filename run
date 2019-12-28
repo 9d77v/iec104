@@ -22,6 +22,9 @@ case $1 in
         ;;
     build)
         docker build -t 9d77v/iec104:v$prod_version .
+        if [ "$2" == "push" ];then
+            docker push 9d77v/iec104:v$prod_version
+        fi
         ;;
     d|docker)
         RunInDocker $app 

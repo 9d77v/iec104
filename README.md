@@ -1,6 +1,20 @@
 # iec104
 iec104主站golang实现
 
+# quickstart
+修改.env中的从站地址
+
+执行docker-compose up -d
+
+## develop
+修改.env中的从站地址
+
+./run d 进入docker容器
+
+./run dev 运行example中的程序
+
+修改example/client/worker/worker.go来处理通过104协议收到的数据
+
 ## 104规约解析
 遥信起始地址1H<=>1
 遥测起始地址4001H<=>16385
@@ -26,9 +40,3 @@ iec104主站golang实现
 
    3.5. M_SP_TB_1=30  带7个字节短时标的单点遥信
 
-## develop
-修改.env中的环境变量
-
-./run d 进入docker容器
-
-./run dev 运行example中的程序

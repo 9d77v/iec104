@@ -1,0 +1,11 @@
+version: '3.6'
+
+services:
+  iec104:
+    image: 9d77v/iec104:v0.0.1
+    restart: always
+    env_file:
+      - .env
+    volumes: 
+      - ./logs:/app/logs
+    container_name: iec104
