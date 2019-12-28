@@ -4,7 +4,7 @@ iec104主站golang实现
 # quickstart
 修改.env中的从站地址
 
-执行docker-compose up -d
+执行docker-compose up
 
 ## develop
 修改.env中的从站地址
