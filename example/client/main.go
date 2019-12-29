@@ -11,5 +11,5 @@ import (
 func main() {
 	address := fmt.Sprintf("%s:%d", config.ServerHost, config.ServerPort)
 	client := iec104.NewClient(address, config.Logger)
-	client.Start(worker.Handler)
+	client.Run(worker.Task)
 }

@@ -23,16 +23,16 @@ var (
 type Client struct {
 	address   string
 	conn      net.Conn
-	Ctx       context.Context
-	Cancel    context.CancelFunc
+	ctx       context.Context
+	cancel    context.CancelFunc
 	Logger    *logrus.Logger
 	lock      *sync.Mutex
 	rsn       int16
 	ssn       int16
-	DataChan  chan *APDU
+	dataChan  chan *APDU
 	sendChan  chan []byte
 	iFrameNum int
-	handler   func(c *Client)
+	task      func(c *APDU)
 }
 
 //NewClient 初始化客户端,连接失败，每隔10秒重试
@@ -55,22 +55,21 @@ func NewClient(address string, logger *logrus.Logger) *Client {
 	return &Client{
 		address:  address,
 		conn:     conn,
-		DataChan: make(chan *APDU, 1),
+		dataChan: make(chan *APDU, 1),
 		sendChan: make(chan []byte, 1),
-		Ctx:      ctx,
-		Cancel:   cancel,
+		ctx:      ctx,
+		cancel:   cancel,
 		Logger:   logger,
 		lock:     new(sync.Mutex),
 	}
 }
 
-//Start 启动
-func (c *Client) Start(f func(c *Client)) {
-	c.handler = f
+//Run 运行
+func (c *Client) Run(task func(*APDU)) {
 	c.sendUFrame(startDtAct)
 	go c.read()
 	go c.write()
-	go c.handler(c)
+	go c.handler(task)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Kill, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	//定时器，每15分钟发送一次总召唤
@@ -80,8 +79,9 @@ func (c *Client) Start(f func(c *Client)) {
 		case <-ticker.C:
 			c.Logger.Info("每隔15分钟发送一次总召唤")
 			c.sendTotalCall()
-		case <-c.Ctx.Done():
+		case <-c.ctx.Done():
 			c.reconnect()
+			return
 		case <-signals:
 			c.close()
 		}
@@ -90,11 +90,11 @@ func (c *Client) Start(f func(c *Client)) {
 
 //Read 读数据
 func (c *Client) read() {
-	defer c.Cancel()
+	defer c.cancel()
 	c.Logger.Info("socket读协程启动")
 	for {
 		select {
-		case <-c.Ctx.Done():
+		case <-c.ctx.Done():
 			c.Logger.Info("socket读协程停止")
 			return
 		default:
@@ -108,11 +108,11 @@ func (c *Client) read() {
 
 //Write 写数据
 func (c *Client) write() {
-	defer c.Cancel()
+	defer c.cancel()
 	c.Logger.Info("socket写协程启动")
 	for {
 		select {
-		case <-c.Ctx.Done():
+		case <-c.ctx.Done():
 			c.Logger.Info("socket写协程停止")
 			return
 		case data := <-c.sendChan:
@@ -122,6 +122,22 @@ func (c *Client) write() {
 			}
 		}
 
+	}
+}
+
+//handler 处理接收到的已解析数据
+func (c *Client) handler(task func(c *APDU)) {
+	c.Logger.Info("数据处理协程启动")
+	defer c.cancel()
+	for {
+		select {
+		case resp := <-c.dataChan:
+			c.Logger.Debugf("接收到数据类型:%d,原因:%d,长度:%d", resp.ASDU.TypeID, resp.ASDU.Cause, len(resp.Signals))
+			go task(resp)
+		case <-c.ctx.Done():
+			c.Logger.Info("数据接收协程停止")
+			return
+		}
 	}
 }
 
@@ -193,12 +209,12 @@ func (c *Client) parseData() error {
 		default:
 			c.iFrameNum++
 			c.Logger.Debugf("接收到第%d个I帧", c.iFrameNum)
-			c.DataChan <- apdu
+			c.dataChan <- apdu
 			c.sendSFrame()
 		}
 	case SFrame:
 		c.Logger.Debugln("接收到S帧")
-		c.DataChan <- apdu
+		c.dataChan <- apdu
 	case UFrame:
 		c.Logger.Debugln("接收到U帧")
 		uFrame := apdu.CtrFrame.(UFrame)
@@ -290,11 +306,11 @@ func (c *Client) reconnect() {
 	}
 	c.conn = conn
 	ctx, cancel := context.WithCancel(context.Background())
-	c.Ctx = ctx
-	c.Cancel = cancel
+	c.ctx = ctx
+	c.cancel = cancel
 	c.rsn = 0
 	c.ssn = 0
-	c.Start(c.handler)
+	c.Run(c.task)
 }
 
 //Close 结束程序
