@@ -32,6 +32,8 @@ const (
 	MItNa1 = 15
 	//MSpTb1 带游标的单点遥信，3个字节的地址，1个字节的值，7个字节短时标
 	MSpTb1 = 30
+	//MEiNA1 初始化结束
+	MEiNA1 = 70
 	//CIcNa1 总召唤
 	CIcNa1 = 100
 	//CCiNa1 电度总召唤
@@ -112,7 +114,7 @@ func (asdu *ASDU) ParseASDU(asduBytes []byte) (signals []*Signal, err error) {
 			s.Address = binary.LittleEndian.Uint32([]byte{asduBytes[6+i*size], asduBytes[6+i*size+1], asduBytes[6+i*size+2], 0x00})
 			s.Value = float64(asduBytes[6+i*size+3])
 			s.Ts = asdu.ParseTime(asduBytes[6+i*size+4 : 6+i*size+11])
-		case CIcNa1, CCiNa1:
+		case CIcNa1, CCiNa1, MEiNA1:
 		default:
 			log.Fatalln("暂不支持的数据类型:", asdu.TypeID)
 		}

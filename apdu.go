@@ -32,14 +32,14 @@ func (apdu *APDU) parseAPDU(input []byte) error {
 	asdu := new(ASDU)
 	var asduLen int
 	signals := make([]*Signal, 0)
-	if len(input[4:len(input)]) < 1 {
+	if len(input[4:]) < 1 {
 		asduLen = 0
 	} else {
-		signals, err = asdu.ParseASDU(input[4:len(input)])
+		signals, err = asdu.ParseASDU(input[4:])
 		if err != nil {
-			return fmt.Errorf("APDU报文[%X]解析ASDU域[%X]异常: %v", input, input[4:len(input)], err)
+			return fmt.Errorf("APDU报文[%X]解析ASDU域[%X]异常: %v", input, input[4:], err)
 		}
-		asduLen = len(input[6:len(input)])
+		asduLen = len(input[6:])
 	}
 	apdu.APCI = apci
 	apdu.ASDU = asdu

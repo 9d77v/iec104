@@ -6,5 +6,6 @@ import (
 
 //Task 数据处理任务
 func Task(data *iec104.APDU) {
+	//TODO 自定义数据处理
 	println("do task")
 }

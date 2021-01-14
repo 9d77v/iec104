@@ -14,91 +14,127 @@ import (
 
 var (
 	contextTimeout    = 30 * time.Second
-	dialTimeout       = 10 * time.Second
+	dialTimeout       = 5 * time.Second
 	testInterval      = 20 * time.Second
 	totalCallInterval = 15 * time.Minute
+	retryTimes        = 3 //存在备用服务器时，单个服务器重试次数
 )
 
 //Client 104客户端
 type Client struct {
-	address   string
-	conn      net.Conn
-	ctx       context.Context
-	cancel    context.CancelFunc
-	Logger    *logrus.Logger
-	lock      *sync.Mutex
-	rsn       int16
-	ssn       int16
-	dataChan  chan *APDU
-	sendChan  chan []byte
-	iFrameNum int
-	task      func(c *APDU)
+	address    string
+	subAddress string
+	curAddress string
+	conn       net.Conn
+	cancel     context.CancelFunc
+	Logger     *logrus.Logger
+	rsn        int16
+	ssn        int16
+	dataChan   chan *APDU
+	sendChan   chan []byte
+	iFrameNum  int
+	task       func(c *APDU)
+	wg         *sync.WaitGroup
 }
 
 //NewClient 初始化客户端,连接失败，每隔10秒重试
-func NewClient(address string, logger *logrus.Logger) *Client {
-	var conn net.Conn
-	var err error
-	logger.Infoln("开始连接服务器")
-	i := 0
-	for {
-		conn, err = net.DialTimeout("tcp", address, dialTimeout)
-		if err != nil {
-			i++
-			logger.Infof("连接服务器失败，开始第%d次重试", i)
-		} else {
-			logger.Infoln("连接服务器成功")
-			break
-		}
+func NewClient(address string, logger *logrus.Logger, subAddress ...string) *Client {
+	subAddr := ""
+	if len(subAddress) == 1 && subAddress[0] != "" {
+		subAddr = subAddress[0]
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Client{
-		address:  address,
-		conn:     conn,
-		dataChan: make(chan *APDU, 1),
-		sendChan: make(chan []byte, 1),
-		ctx:      ctx,
-		cancel:   cancel,
-		Logger:   logger,
-		lock:     new(sync.Mutex),
+		address:    address,
+		subAddress: subAddr,
+		curAddress: address,
+		dataChan:   make(chan *APDU, 1),
+		sendChan:   make(chan []byte, 1),
+		Logger:     logger,
+		wg:         new(sync.WaitGroup),
 	}
 }
 
 //Run 运行
 func (c *Client) Run(task func(*APDU)) {
-	c.sendUFrame(startDtAct)
-	go c.read()
-	go c.write()
-	go c.handler(task)
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Kill, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	go c.handleSignal()
 	//定时器，每15分钟发送一次总召唤
 	ticker := time.NewTicker(totalCallInterval)
 	for {
-		select {
-		case <-ticker.C:
-			c.Logger.Info("每隔15分钟发送一次总召唤")
-			c.sendTotalCall()
-		case <-c.ctx.Done():
-			c.reconnect()
-			return
-		case <-signals:
-			c.close()
+		c.conn = c.dail()
+		c.sendUFrame(startDtAct)
+		ctx, cancel := context.WithCancel(context.Background())
+		c.cancel = cancel
+		c.wg.Add(3)
+		go c.read(ctx)
+		go c.write(ctx)
+		go c.handler(ctx, task)
+	cronLoop:
+		for {
+			select {
+			case <-ticker.C:
+				c.Logger.Info("每隔15分钟发送一次总召唤")
+				c.sendTotalCall()
+			case <-ctx.Done():
+				break cronLoop
+			}
 		}
+		c.Logger.Info("等待goroutine退出")
+		c.wg.Wait()
+		if c.conn != nil {
+			c.conn.Close()
+		}
+		ctx, cancel = context.WithCancel(context.Background())
+		c.cancel = cancel
+		c.rsn = 0
+		c.ssn = 0
+		c.iFrameNum = 0
 	}
 }
 
+//建立tcp连接，支持重试和主备切换
+func (c *Client) dail() net.Conn {
+	var conn net.Conn
+	var err error
+	c.Logger.Infof("开始连接服务器:%v", c.curAddress)
+	i := -1
+	for {
+		conn, err = net.DialTimeout("tcp", c.curAddress, dialTimeout)
+		if err != nil {
+			time.Sleep(dialTimeout)
+			i++
+			if i == retryTimes && c.subAddress != "" {
+				i = 0
+				if c.curAddress == c.address {
+					c.curAddress = c.subAddress
+				} else {
+					c.curAddress = c.address
+				}
+				c.Logger.Infof("尝试超过3次，切换服务器为:%s,开始第%d次重试", c.curAddress, i+1)
+			} else {
+				c.Logger.Infof("连接服务器失败，开始第%d次重试", i+1)
+			}
+		} else {
+			c.Logger.Infoln("连接服务器成功")
+			break
+		}
+	}
+	return conn
+}
+
 //Read 读数据
-func (c *Client) read() {
-	defer c.cancel()
+func (c *Client) read(ctx context.Context) {
 	c.Logger.Info("socket读协程启动")
+	defer func() {
+		c.cancel()
+		c.wg.Done()
+		c.Logger.Info("socket读协程停止")
+	}()
 	for {
 		select {
-		case <-c.ctx.Done():
-			c.Logger.Info("socket读协程停止")
+		case <-ctx.Done():
 			return
 		default:
-			err := c.parseData()
+			err := c.parseData(ctx)
 			if err != nil {
 				return
 			}
@@ -107,13 +143,16 @@ func (c *Client) read() {
 }
 
 //Write 写数据
-func (c *Client) write() {
-	defer c.cancel()
+func (c *Client) write(ctx context.Context) {
 	c.Logger.Info("socket写协程启动")
+	defer func() {
+		c.cancel()
+		c.wg.Done()
+		c.Logger.Info("socket写协程停止")
+	}()
 	for {
 		select {
-		case <-c.ctx.Done():
-			c.Logger.Info("socket写协程停止")
+		case <-ctx.Done():
 			return
 		case data := <-c.sendChan:
 			_, err := c.conn.Write(data)
@@ -121,28 +160,30 @@ func (c *Client) write() {
 				return
 			}
 		}
-
 	}
 }
 
 //handler 处理接收到的已解析数据
-func (c *Client) handler(task func(c *APDU)) {
+func (c *Client) handler(ctx context.Context, task func(c *APDU)) {
 	c.Logger.Info("数据处理协程启动")
-	defer c.cancel()
+	defer func() {
+		c.cancel()
+		c.wg.Done()
+		c.Logger.Info("数据接收协程停止")
+	}()
 	for {
 		select {
 		case resp := <-c.dataChan:
 			c.Logger.Debugf("接收到数据类型:%d,原因:%d,长度:%d", resp.ASDU.TypeID, resp.ASDU.Cause, len(resp.Signals))
 			go task(resp)
-		case <-c.ctx.Done():
-			c.Logger.Info("数据接收协程停止")
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
 //ParseData 解析接收到的数据
-func (c *Client) parseData() error {
+func (c *Client) parseData(ctx context.Context) error {
 	handleErr := func(tag string, err error) {
 		c.Logger.Errorf("%s read socket读操作异常: %v", tag, err)
 	}
@@ -155,6 +196,11 @@ func (c *Client) parseData() error {
 		return err
 	}
 	c.conn.SetDeadline(time.Now().Add(contextTimeout))
+	if n == 0 {
+		c.Logger.Info("读取到空数据,10s后继续读取数据")
+		time.Sleep(10 * time.Second)
+		return nil
+	}
 	length := int(buf[1])
 	//读取正文
 	contentBuf := make([]byte, length)
@@ -190,6 +236,10 @@ func (c *Client) parseData() error {
 	case IFrame:
 		c.incrRsn()
 		switch apdu.ASDU.TypeID {
+		case MEiNA1:
+			c.Logger.Info("接收到初始化结束，开始发送总召唤")
+			c.sendSFrame()
+			c.sendTotalCall()
 		case CIcNa1:
 			if apdu.ASDU.Cause == 7 {
 				c.Logger.Info("接收总召唤确认帧")
@@ -215,7 +265,6 @@ func (c *Client) parseData() error {
 		}
 	case SFrame:
 		c.Logger.Debugln("接收到S帧")
-		c.dataChan <- apdu
 	case UFrame:
 		c.Logger.Debugln("接收到U帧")
 		uFrame := apdu.CtrFrame.(UFrame)
@@ -224,7 +273,7 @@ func (c *Client) parseData() error {
 			c.Logger.Info("U帧为启动确认帧，发送总召唤")
 			c.sendTotalCall()
 		case testFrAct:
-			c.Logger.Info("U帧为测试激活帧,发送测确认帧")
+			c.Logger.Info("U帧为测试激活帧,发送测试确认帧")
 			c.sendUFrame(testFrCon)
 		}
 	default:
@@ -236,7 +285,7 @@ func (c *Client) parseData() error {
 //sendUFrame 发送U帧
 func (c *Client) sendUFrame(cmd [4]byte) {
 	data := convertBytes(convert4BytesToSlice(cmd))
-	c.Logger.Debugf("发送启动U帧: [% X]", data)
+	c.Logger.Debugf("发送U帧: [% X]", data)
 	c.sendChan <- data
 }
 
@@ -247,7 +296,7 @@ func (c *Client) sendSFrame() {
 	sendBytes = append(sendBytes, 0x01, 0x00)
 	sendBytes = append(sendBytes, rsnBytes...)
 	data := convertBytes(sendBytes)
-	c.Logger.Debugf("发送启动S帧: [% X]", data)
+	c.Logger.Debugf("发送S帧: [% X]", data)
 	c.sendChan <- data
 }
 
@@ -285,35 +334,16 @@ func (c *Client) incrRsn() {
 	}
 }
 
-//reconnect 重连程序
-func (c *Client) reconnect() {
-	var conn net.Conn
-	var err error
-	c.conn.Close()
-	c.Logger.Println("断开服务器连接，开始重连")
-	i := 0
-	for {
-		conn, err = net.DialTimeout("tcp", c.address, dialTimeout)
-		if err != nil {
-			i++
-			c.Logger.Infof("连接服务器失败，开始第%d次重试", i)
-		} else {
-			c.Logger.Infoln("连接服务器成功")
-			break
-		}
-	}
-	c.conn = conn
-	ctx, cancel := context.WithCancel(context.Background())
-	c.ctx = ctx
-	c.cancel = cancel
-	c.rsn = 0
-	c.ssn = 0
-	c.Run(c.task)
-}
-
 //Close 结束程序
-func (c *Client) close() {
-	c.conn.Close()
+func (c *Client) handleSignal() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Kill, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	<-signals
+	c.cancel()
+	c.wg.Wait()
+	if c.conn != nil {
+		c.conn.Close()
+	}
 	c.Logger.Println("断开服务器连接，程序关闭")
-	os.Exit(1)
+	os.Exit(0)
 }

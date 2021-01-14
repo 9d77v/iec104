@@ -10,6 +10,10 @@ import (
 
 func main() {
 	address := fmt.Sprintf("%s:%d", config.ServerHost, config.ServerPort)
-	client := iec104.NewClient(address, config.Logger)
+	subAddress := ""
+	if config.SubServerHost != "" && config.SubServerPort != 0 {
+		subAddress = fmt.Sprintf("%s:%d", config.SubServerHost, config.ServerPort)
+	}
+	client := iec104.NewClient(address, config.Logger, subAddress)
 	client.Run(worker.Task)
 }

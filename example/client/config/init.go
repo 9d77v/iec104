@@ -15,6 +15,10 @@ var (
 	ServerHost = os.Getenv("SERVER_HOST")
 	//ServerPort 服务器端口
 	ServerPort, _ = strconv.Atoi(os.Getenv("SERVER_PORT"))
+	//SubServerHost 备用服务器ip
+	SubServerHost = os.Getenv("SUB_SERVER_HOST")
+	//SubServerPort 备用服务器端口
+	SubServerPort, _ = strconv.Atoi(os.Getenv("SUB_SERVER_PORT"))
 	//Debug 是否debug模式
 	Debug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 	//Logger 日志
