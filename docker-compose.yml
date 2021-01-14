@@ -2,7 +2,7 @@ version: '3.6'
 
 services:
   iec104:
-    image: 9d77v/iec104:v0.0.1
+    image: 9d77v/iec104:2019-12-29_d1c9246
     restart: always
     env_file:
       - .env
