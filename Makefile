@@ -6,12 +6,14 @@ IMAGE_TAG=$(shell git log --pretty=format:"%ad_%h" -1 --date=short)
 
 SERVER_HOST=192.168.0.105
 SERVER_PORT=2404
+SUB_SERVER_HOST=192.168.0.104
+SUB_SERVER_PORT=2404
 DEBUG=true
 
 deps:
 	go mod download
 dev: example/client/main.go
-	ENV SERVER_HOST=$(SERVER_HOST) SERVER_PORT=$(SERVER_PORT) DEBUG=$(DEBUG) go run example/client/main.go
+	ENV SERVER_HOST=$(SERVER_HOST) SERVER_PORT=$(SERVER_PORT) SUB_SERVER_HOST=$(SUB_SERVER_HOST) SUB_SERVER_PORT=$(SUB_SERVER_PORT) DEBUG=$(DEBUG) go run example/client/main.go
 test:
 	go test -cover ./...
 	
