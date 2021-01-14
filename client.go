@@ -188,6 +188,7 @@ func (c *Client) parseData() error {
 	}
 	switch apdu.CtrFrame.(type) {
 	case IFrame:
+		c.incrRsn()
 		switch apdu.ASDU.TypeID {
 		case CIcNa1:
 			if apdu.ASDU.Cause == 7 {
@@ -241,7 +242,6 @@ func (c *Client) sendUFrame(cmd [4]byte) {
 
 //sendSFrame 发送S帧
 func (c *Client) sendSFrame() {
-	c.incrRsn()
 	rsnBytes := parseLittleEndianUInt16(uint16(c.rsn << 1))
 	sendBytes := make([]byte, 0, 0)
 	sendBytes = append(sendBytes, 0x01, 0x00)
@@ -279,8 +279,6 @@ func (c *Client) sendElectricityTotalCall() {
 
 //incrRsn 增加rsn
 func (c *Client) incrRsn() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 	c.rsn++
 	if c.rsn < 0 {
 		c.rsn = 0
