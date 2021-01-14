@@ -1,0 +1,11 @@
+FROM alpine:3.12
+
+LABEL maintainer="9d77v@9d77v.me"
+
+RUN echo "http://mirrors.aliyun.com/alpine/v3.12/main/" > /etc/apk/repositories \
+    && echo "http://mirrors.aliyun.com/alpine/v3.12/community/" >> /etc/apk/repositories \
+    && apk add --no-cache tzdata\
+    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" >  /etc/timezone \
+    && apk del tzdata 
+

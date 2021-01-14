@@ -7,13 +7,10 @@ iec104主站golang实现
 执行docker-compose up
 
 ## develop
-修改.env中的从站地址
-
-./run d 进入docker容器
-
-./run client 运行example中的104主站程序
-
-修改example/client/worker/worker.go来处理通过104协议收到的数据
+1. 修改.env中的从站地址
+2. 安装依赖 `make deps` 
+3. 修改example/client/worker/worker.go来处理通过104协议收到的数据
+4. 运行example中的104主站程序 `make client` 
 
 ## 104规约解析
 遥信起始地址1H<=>1
