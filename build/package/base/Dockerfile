@@ -7,7 +7,7 @@ ENV GOPROXY=https://goproxy.cn
 
 RUN echo "http://mirrors.aliyun.com/alpine/v3.12/main/" > /etc/apk/repositories \
     && echo "http://mirrors.aliyun.com/alpine/v3.12/community/" >> /etc/apk/repositories \
-    && apk add --no-cache upx tzdata make\
+    && apk add --no-cache upx tzdata\
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" >  /etc/timezone \
     && apk del tzdata 
