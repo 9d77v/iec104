@@ -94,8 +94,8 @@ func (asdu *ASDU) ParseASDU(asduBytes []byte) (signals []*Signal, err error) {
 				s.Quality = asduBytes[9+i*size+4]
 			} else {
 				s.Address = binary.LittleEndian.Uint32([]byte{asduBytes[6+i*size], asduBytes[6+i*size+1], asduBytes[6+i*size+2], 0x00})
-				s.Value = float64(math.Float32frombits(binary.LittleEndian.Uint32([]byte{asduBytes[6+i*size+3], asduBytes[9+i*size+4],
-					asduBytes[9+i*size+5], asduBytes[9+i*size+6]})))
+				s.Value = float64(math.Float32frombits(binary.LittleEndian.Uint32([]byte{asduBytes[6+i*size+3], asduBytes[6+i*size+4],
+					asduBytes[6+i*size+5], asduBytes[6+i*size+6]})))
 				s.Quality = asduBytes[6+i*size+7]
 			}
 		case MItNa1:
